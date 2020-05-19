@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons.css">
+    <script type="text/javascript">
+        var DIALOG_DIMENSIONS = {
+            width: 600,
+            height: 425
+        };
+        var pickerApiLoaded = false;
+
+        function onApiLoad() {
+            gapi.load('picker', {
+                'callback': function () {
+                    pickerApiLoaded = true;
+                }
+            });
+            google.script.run.withSuccessHandler(createPicker)
+                .withFailureHandler(showError).getAccessToken();
+        }
+
+        function createPicker(token) {
+
+            if (pickerApiLoaded && token) {
+
+                var docsView = new google.picker.DocsView()
+                    .setIncludeFolders(true)
+                    .setMimeTypes(<?= fileType ?>)
+                    
+
+                var picker = new google.picker.PickerBuilder()
+                    .addView(docsView)
+                    //.enableFeature(google.picker.Feature.NAV_HIDDEN)
+                    //.enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+                    .hideTitleBar()
+                    .setSize(DIALOG_DIMENSIONS.width - 2, DIALOG_DIMENSIONS.height - 2)
+                    .setOAuthToken(token)
+                    .setCallback(pickerCallback)
+                    .setOrigin('https://docs.google.com')
+                    .build();
+
+                picker.setVisible(true);
+
+            } else {
+                showError('Unable to load the file picker.');
+            }
+        }
+
+        /**
+         * A callback function that extracts the chosen document's metadata from the
+         * response object. For details on the response object, see
+         * https://developers.google.com/picker/docs/result
+         *
+         * @param {object} data The response object.
+         */
+        function pickerCallback(data) {
+            if ([google.picker.Action.PICKED, google.picker.Action.CANCEL].indexOf(data.action) === -1) return;
+            google.script.run.withSuccessHandler(closeModal).setPickerResult((data.action == google.picker.Action.PICKED) ? (data.docs[0].url) : (''));
+        }
+
+        function closeModal() {
+            google.script.host.close();
+        }
+
+        function useData(folderName) {
+            document.getElementById('folder-name').innerHTML = folderName
+        }
+
+        function showError(message) {
+            document.getElementById('result').innerHTML = 'Error: ' + message;
+        }
+    </script>
+</head>
+
+<body>
+<div>
+    <p id='result'></p>
+</div>
+<script type="text/javascript" src="https://apis.google.com/js/api.js?onload=onApiLoad"></script>
+<script>
+    $(window).on('unload', e => {
+        console.log("Invoked just before unload");
+        // do pre-unload stuff
+    });
+</script>
+</body>
+</html>

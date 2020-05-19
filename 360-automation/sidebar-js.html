@@ -1,0 +1,58 @@
+<script>
+
+    /*
+       sidebars load sidebar after the ready event is triggered,
+       so we need to manually call this function in the sidebar-common-js
+       to register the listeners.
+    */
+
+    function registerFuncListeners() {
+        $('[func-value]').on('click', function (e) { // this is how you capture the click event on html tags with the func-value attribute
+            e.preventDefault();
+            const funcValue = $(this).attr('func-value'); // this is how you capture the value
+            let confirm = typeof shouldConfirmBeforeLeaving !== "undefined" && shouldConfirmBeforeLeaving();
+            google.script.run.callFunction(funcValue, confirm); // this is how I send the value back to the backend
+        });
+    }
+
+    function registerThemeButtonListeners() {
+        $('a.btn-customized-dark').on('click', function (e) {
+            e.preventDefault();
+            $('.sidebar').removeClass('light');
+            $('body').addClass('dark');
+            google.script.run
+                .withFailureHandler(
+                    function (msg, element) {
+                        showError(msg, $('#dark-light-buttons'));
+                    })
+                .withUserObject(this)
+                .setDark();
+        });
+        
+        $('a.btn-customized-light').on('click', function (e) {
+            e.preventDefault();
+            $('.sidebar').addClass('light');
+            $('body').removeClass('dark');
+            google.script.run
+                .withFailureHandler(
+                    function (msg, element) {
+                        showError(msg, $('#dark-light-buttons'));
+                    })
+                .withUserObject(this)
+                .setLight();
+        });
+    }
+
+    $(document).ready(function () {
+        registerFuncListeners();
+        registerThemeButtonListeners();
+
+        function showError(msg, element) {
+            var div = $('<div id="error" class="error">' + msg + '</div>');
+            $(element).after(div);
+        }  
+
+    });
+
+   
+</script>

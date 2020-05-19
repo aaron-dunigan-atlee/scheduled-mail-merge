@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+</head>
+<body>
+<iframe width="960" height="690" src="https://www.loom.com/embed/<?=loomCode?>?autoplay=1" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen></iframe>
+<button id="save" type="button" class="btn btn-primary" onclick="closeDialog()">OK</button>
+</body>
+<script>
+function closeDialog() {
+  google.script.host.close();
+}
+
+</script>

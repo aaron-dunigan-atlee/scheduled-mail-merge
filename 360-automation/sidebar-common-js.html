@@ -1,0 +1,24 @@
+<script>
+
+function onLoadMainSidebarSuccess (sidebarHTML) { 
+    const sidebarContainer = $('.main-sidebar-container');
+    sidebarContainer.html(sidebarHTML);
+    $('.slide-out-button').click(function() {
+        sidebarContainer.removeClass('visible');
+    });
+    
+    registerFuncListeners();
+    registerThemeButtonListeners();
+    
+    if ($('body.dark').length === 0) {$('.sidebar').addClass('light')};
+}
+
+function showSpinnerContainer() {
+    $('.spinner-container').css('visibility', 'visible');
+}
+
+function hideSpinnerContainer() {
+    $('.spinner-container').css('visibility', 'hidden');
+}
+
+</script>

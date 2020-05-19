@@ -1,0 +1,88 @@
+<script>
+
+$(document).ready(function () {
+    $('#save-btn').click(function () {
+        createNewCohort();
+    });
+    $('#basecamp-button').click(function () {
+      onProjectSelect();
+    });
+});
+
+function onProjectSelect() {
+  var projectId = $('#project-select').children("option:selected").val()
+  if (!projectId) return;
+  showLoadingSign();
+  google.script.run
+    .withFailureHandler(onBasecampError)
+    .withSuccessHandler(setBasecampDates)
+    .loadBasecampDatesSlack(projectId)
+}
+
+function setBasecampDates(basecampDates) {
+  // console.log(basecampDates)
+  basecampDates = JSON.parse(basecampDates)
+  // Set dates for 360 sessions or coaching calls
+  for (var number in basecampDates.threeSixtyDates) {
+    var dateInputId = '#threeSixty-' + number + '-date-input'
+    $(dateInputId).val(basecampDates.threeSixtyDates[number])
+  }
+  $('#session-dates-input').val(JSON.stringify(basecampDates.sessionDates))
+  hideLoadingSign();
+}
+
+function onBasecampError(err) {
+  hideLoadingSign();
+  google.script.run.showBasecampErrorAlert()
+}
+
+function createNewCohort() {
+    // console.log('clicked Create Cohort');
+    showLoadingSign();
+    var config = {}
+    config.client = $('#client-name-input').children("option:selected").val() || 'New Client';
+    config.flowSheetName = $("#sheet-select").children("option:selected").val() || '';
+    config.cohortName = $('#cohort-name-input').val() || 'New Cohort';
+    var anchorDateFields = ['#threeSixty-1-date-input', '#threeSixty-2-date-input', '#threeSixty-3-date-input']
+    config.coachingCallDates =[]
+    for (var i=0; i<anchorDateFields.length; i++) {
+      var date =  $(anchorDateFields[i]).val();
+      if (date) {config.coachingCallDates.push(date)};
+    }
+    config.sessionDates = $('#session-dates-input').val()
+    google.script.run
+        .withSuccessHandler(window.closeDialog)
+        .withFailureHandler(onScriptRunError)
+        .withUserObject(this)
+        .createCohortSlack(config);
+}
+
+function onScriptRunError(err) {
+  google.script.run.withSuccessHandler(window.closeDialog).scriptRunErrorAlert()
+}
+
+window.closeDialog = function () {
+    google.script.host.close();
+};
+
+/**
+ * Inserts a div that contains an error message after a given element.
+ *
+ * @param msg The error message to display.
+ * @param element The element after which to display the error.
+ */
+function showError(msg, element) {
+    var div = $('<div id="error" class="alert alert-danger mx-3">' + msg + '</div>');
+    $(element).after(div);
+}
+
+/* --- new stuff --- */
+
+$(document).ready(function() {
+    $('#sheet-select').on('changed.bs.select', function (e, index) {
+        var card =$('.card_' + index);
+        if (card.hasClass('d-none')) card.removeClass('d-none'); else card.addClass('d-none');
+    });
+});
+
+</script>
