@@ -1,6 +1,15 @@
 {
   "timeZone": "America/New_York",
   "dependencies": {
+    "enabledAdvancedServices": [{
+      "userSymbol": "Docs",
+      "serviceId": "docs",
+      "version": "v1"
+    }, {
+      "userSymbol": "Drive",
+      "serviceId": "drive",
+      "version": "v2"
+    }],
     "libraries": [{
       "userSymbol": "OAuth2",
       "libraryId": "1B7FSrk5Zi6L1rSxxTDgDEUsPzlukDsi4KGuTMorsTQHhGBzBkMun4iDF",

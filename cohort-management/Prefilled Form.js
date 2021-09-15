@@ -18,7 +18,7 @@ function getPrefilledFormUrl(formUrl, fields) {
       slackCacheWarn('"' + questionText + '" not found in form at ' + formUrl)
     }
   }
-  return addedItems ? formResponse.toPrefilledUrl() : formUrl
+  return addedItems ? formResponse.toPrefilledUrl() : form.getPublishedUrl()
 }
 
 /** 

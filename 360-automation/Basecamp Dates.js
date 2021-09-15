@@ -3,14 +3,14 @@
  * Load a list of basecamp projects to be returned to the sidebar
  */
 function loadBasecampProjects() {
-  var projects = getBasecampProjects();
-  if (projects.length === 0) throw new Error("Basecamp API returned zero projects.")
+  var projects = getBasecampProjects()
     .map(function(project){
       return {
         'name': project.name, 
         'id': project.id
       }
-    })
+    });
+  if (projects.length === 0) console.log("Basecamp API returned zero projects.")
   return projects
 }
 

@@ -43,13 +43,15 @@ function createNewCohort() {
     config.client = $('#client-name-input').children("option:selected").val() || 'New Client';
     config.flowSheetName = $("#sheet-select").children("option:selected").val() || '';
     config.cohortName = $('#cohort-name-input').val() || 'New Cohort';
+    config.participantList = $('#participant-list-input').val();
     var anchorDateFields = ['#threeSixty-1-date-input', '#threeSixty-2-date-input', '#threeSixty-3-date-input']
     config.coachingCallDates =[]
     for (var i=0; i<anchorDateFields.length; i++) {
       var date =  $(anchorDateFields[i]).val();
-      if (date) {config.coachingCallDates.push(date)};
+      config.coachingCallDates.push(date);
     }
-    config.sessionDates = $('#session-dates-input').val()
+    config.session1Date = $('#session-1-date-input').val();
+    config.sessionDates = $('#session-dates-input').val();
     google.script.run
         .withSuccessHandler(window.closeDialog)
         .withFailureHandler(onScriptRunError)

@@ -16,33 +16,40 @@ function fillTemplate(templateUrl, fieldObject, destinationFolder, filename, rep
   if (typeof replaceEmptyFields === 'undefined') replaceEmptyFields = true;
   var replacementObject = fieldObject.replacements || {}
   var hyperlinkReplacements = fieldObject.hyperlinkReplacements || []
-  var file = DriveApp.getFileById(DocumentApp.openByUrl(templateUrl).getId());
+  var file = DriveApp.getFileById(getIdFromUrl(templateUrl));
   var templateAsFile = file.makeCopy(filename, destinationFolder);
   var templateId = templateAsFile.getId();
   var templateAsDoc = DocumentApp.openById(templateId);
 
   // Make table replacements
-  if (fieldObject.tableReplacements) {
-    // We're assuming there's only one table.
+  if (fieldObject.tableReplacements && countKeys(fieldObject.tableReplacements) > 0) {
+    // We're assuming there's only one table and it has at most 2 rows: one for headers and one for fields.
     var table = templateAsDoc.getBody().getTables()[0]
-    var tableRow = table.getRow(0).copy()
-    for (var i=0; i<fieldObject.tableReplacements.length; i++) {
-      var tableReplacement = fieldObject.tableReplacements[i]
-      table.appendTableRow(
-        tableRow.copy().replaceText('>', i+'>').asTableRow()
-      )
-      for (var field in tableReplacement.replacements) {
-        replacementObject[field+i] = tableReplacement.replacements[field]
+    if (table) {
+      var rowCount = table.getNumRows()
+      var templateRow = table.getRow(rowCount-1)
+      var tableRow = templateRow.copy()
+      for (var i=0; i<fieldObject.tableReplacements.length; i++) {
+        var tableReplacement = fieldObject.tableReplacements[i]
+        table.appendTableRow(
+          tableRow.copy().replaceText('>', i+'>').asTableRow()
+        )
+        for (var field in tableReplacement.fieldValues) {
+          replacementObject[field+i] = tableReplacement.fieldValues[field]
+        }
+        tableReplacement.hyperlinkReplacements.forEach(function(x){
+          x.field = x.field + '' + i
+          hyperlinkReplacements.push(x)
+        })
       }
-      tableReplacement.hyperlinkReplacements.forEach(function(x){
-        x.field = x.field + '' + i
-        hyperlinkReplacements.push(x)
-      })
+      // Take out the un-numbered top row.
+      templateRow.removeFromParent()
+      templateAsDoc.saveAndClose()
+      templateAsDoc = DocumentApp.openById(templateId);
+    } else {
+      slackCacheWarn("Table replacements were given, but no tables were found, for " + templateUrl)
     }
-    // Take out the un-numbered top row.
-    table.getRow(0).removeFromParent
-    templateAsDoc.saveAndClose()
-    templateAsDoc = DocumentApp.openById(templateId);
+
   }
 
 
@@ -199,4 +206,14 @@ function addSurveyLinks(document, hyperlinkObject) {
     link = body.findText(searchText, link);
   }
   document.saveAndClose();
+}
+
+function countKeys(object) {
+  var count = 0;
+  for (var key in object) {
+    if (object.hasOwnProperty(key)) {
+      count++
+    }
+  }
+  return count
 }

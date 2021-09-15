@@ -4,7 +4,7 @@ function sendEmailsSlack(e) {
 
 function sendResultsEmail(emailAddress, emailData) {
   var cohortSettings = emailData.cohortSettings;
-  // var cohortFolder = DriveApp.getFileById(SpreadsheetApp.getActive().getId()).getParents().next()
+  var cohortFolder = DriveApp.getFolderById(cohortSettings['Cohort Folder ID'])
   // {name:, templateUrl:, recipientType:, globals:,participantsUrl:}
   var template = emailData.templateData
 
@@ -18,20 +18,21 @@ function sendResultsEmail(emailAddress, emailData) {
       // Fill template.
       console.log("Filling template for email:\n" + JSON.stringify(email,null,2))
       var emailDocId = fillTemplate(email.templateUrl, replacementObject, cohortFolder, email.name, true)
-      var htmlBody = convertDocToHtml(emailDocId)
+      var htmlBody = convertDocToHtml(emailDocId).replace(/<style[\s\S]*?<\/style>/ig, '')
       DriveApp.getFileById(emailDocId).setTrashed(true)
-
+      // Add attachment if present.
+      if (emailData.resultsFileId) {
+        resultsFileUrl = DriveApp.getFileById(emailData.resultsFileId).getUrl()
+        htmlBody += '<br><br><a href ="' + resultsFileUrl + '">Attachment: 360 results</a>'
+        // Attempt to share the file with the participant.  Participants may not have gmail addresses, which will throw an error--log it to slack and move on.
+        shareSilentyFailSilently(emailData.resultsFileId, emailAddress)
+      }
       // Send email.
       var message = {
         to: emailAddress,
         bcc: EMAIL_BCC,
         subject: email.subject,
         htmlBody: htmlBody
-      }
-      // Add attachment if present.
-      if (emailData.resultsFileId) {
-        var attachment = DriveApp.getFileById(emailData.resultsFileId)
-        message.attachments = [attachment]
       }
       MailApp.sendEmail(message)
       console.log("Sent message " + email.subject + " to " + email.recipient)
@@ -64,7 +65,11 @@ function convertDocToHtml(documentId) {
  * @return {object[]} [{name:, templateUrl:, recipient:, subject:, templateValues:}]
  */
 function getResultsEmailTemplateObject(cohortSettings) {
-  var templateUrl = cohortSettings['Results Template']
+  var templateUrl = cohortSettings['Results Email Template']
+  if (!templateUrl) {
+    slackError("No 'Results Email Template' was specified for cohort " + cohortSettings['Cohort Name'])
+  }
+  console.log('Building template for Results Email with template url ' + templateUrl )
   var template =  {
     templateUrl: templateUrl,
     name: 'Results Email',

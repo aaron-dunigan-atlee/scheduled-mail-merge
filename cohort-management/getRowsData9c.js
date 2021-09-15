@@ -46,6 +46,7 @@ function getRowsData2(sheet, range, parameters) {
   if (parameters.headersCase === 'snake_case' || parameters.headersCase === 'snake') keys = snakeCaseHeaders(headers);
   if (parameters.headersCase === 'lowercase' || parameters.headersCase === 'lower') keys = lowerCaseHeaders(headers);
   if (parameters.getShortcut) base = sheet.getParent().getUrl()+'#gid='+sheet.getSheetId()+'&range=A';
+  if (parameters.headersCase === 'none') keys = headers;
   
   return getObjects_(values, keys, parameters.getBlanks, parameters.getMetadata, dataRange.getRowIndex(), base);
 }
@@ -80,7 +81,7 @@ function lowerCaseHeaders(headers){
 //   - omitZeros: if true, cells with the value of zero will be omitted, writing blanks instead
 //   - firstRowIndex (integer): index of the first row where data should be written. This defaults to the row immediately below the headers.
 //   - headersCase: how to transform the case of the headers (defaults to camelCase), default is lowerCamelCase (camelCase,snake_case,lowercase,none)
-//   - preserveArrayFormulas: If true, don't overwrite cell if its row 1 has an array formula.
+//   - preserveArrayFormulas: If true, don't overwrite cell if its column has an array formula.
 
 function setRowsData2(sheet, objects, parameters) {
   if (objects.length === 0) {
@@ -108,7 +109,7 @@ function setRowsData2(sheet, objects, parameters) {
   if (!objects instanceof Array && objects instanceof Object) objects = [objects]; //in case only one object is passed instead of an array with one element as intended
   var formulaKeys = {};
   if (parameters.preserveArrayFormulas) {
-    var headerFormulas = sheet.getRange(1, headersRange.getColumn(), 1, headersRange.getLastColumn()).getFormulas().shift();
+    var headerFormulas = sheet.getRange(headersRange.getRow()+1, headersRange.getColumn(), 1, headersRange.getLastColumn()).getFormulas().shift();
     for (j = 0; j < keys.length; ++j) {
       if (headerFormulas[j]) formulaKeys[keys[j]]=true;
     }

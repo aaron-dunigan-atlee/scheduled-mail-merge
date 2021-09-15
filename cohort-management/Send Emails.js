@@ -2,62 +2,90 @@ function sendEmailsSlack(e) {
   runWithSlackReporting('sendEmails', [e])
 }
 
-function sendEmails(e) {
+function sendEmails(e, today) {
   var cohortSettings = getCohortSettings()
-  var cohortFolder = DriveApp.getFileById(SpreadsheetApp.getActive().getId()).getParents().next()
+  var cohortFolder = DriveApp.getFolderById(cohortSettings["Cohort Folder ID"])
   // Get list of email templates to send {name:, templateUrl:, recipientType:, globals:,participantsUrl:}
-  var todaysTemplates = getTodaysEmailTemplates(cohortSettings)
+  var todaysTemplates = getTodaysEmailTemplates(cohortSettings, today)
   if ((todaysTemplates.templates.length) == 0) {
     slackLog('No emails to send today')
+    if (todaysTemplates.cohortFinished) endCohort(cohortSettings['Cohort Name']);
     return
   }
   console.log("Found " + todaysTemplates.templates.length + " email templates to send today.")
   todaysTemplates.templates.forEach(function(template){
-    var emailCount = 0
+    var emailCount = 0, failedEmailCount = 0;
     console.log(template)
     // Fill global fields (not participant-specific)
     template.fileId = fillTemplate(template.templateUrl, {'replacements': template.globals}, cohortFolder, template.name, false)
+    // HR emails: Add HR Report tables to the template.
+    if (/^HR/.test(template.recipientType || '')) {
+      try {
+        var hrTemplateId = buildHrReport(template.fileId, template.rowsData.surveyLink)
+        if (!hrTemplateId) {
+          slackCacheLog("It's time to send the HR report, but there were no missing surveys, so the HR email will not be sent.")
+          return; // to next template
+        }
+      } catch(err) {
+        slackError(err, true, "Error building HR Report")
+        console.log("Email for this template won't be sent.")
+        return; // Don't try to send this template.
+      }
+    }
+    
     // Get list of participant-specific emails to send {recipient:, subject:, fieldValues:}
     var pendingEmails = buildEmails(template, cohortSettings)
-  
+    
     // Send each email
     pendingEmails.forEach(function(email){
-      // Manager emails need a little extra.
-      var replacementObject = {'replacements': email.fieldValues, 'hyperlinkReplacements': email.hyperlinkReplacements}
-      if (template.recipientType == 'Manager') {
-        replacementObject.tableReplacements = email.participantRows
+      try {
+        // Manager emails need a little extra.
+        var replacementObject = {'replacements': email.fieldValues, 'hyperlinkReplacements': email.hyperlinkReplacements}
+        if (template.recipientType == 'Manager') {
+          replacementObject.tableReplacements = email.participantRows
+        }
+
+        // Fill template.
+        console.log("Filling template for email:\n" + JSON.stringify(email,null,2))
+        var emailDocId = fillTemplate(email.templateUrl, replacementObject, cohortFolder, email.name, true)
+        var htmlBody = convertDocToHtml(emailDocId)
+        DriveApp.getFileById(emailDocId).setTrashed(true)
+
+        // Add footer with debug info
+        if (TEST_MODE) htmlBody += buildEmailFooter(template.templateUrl, e, 'Send Emails')
+
+        // Send email.
+        var message = {
+          to: email.recipient,
+          bcc: EMAIL_BCC,
+          subject: email.subject,
+          htmlBody: htmlBody
+        }
+        // Add attachment if present.
+        if (email.attachmentId) {
+          var attachment = DriveApp.getFileById(email.attachmentId)
+          message.attachments = [attachment]
+        }
+      
+        MailApp.sendEmail(message)
+        console.log("Sent message " + email.subject + " to " + email.recipient)
+        emailCount++
+      } catch(err) {
+        // Continue execution so we can try the next email
+        slackError(err, true, "Failed to send email " + email.subject + " to " + email.recipient)
+        failedEmailCount++;
       }
 
-      // Fill template.
-      console.log("Filling template for email:\n" + JSON.stringify(email,null,2))
-      var emailDocId = fillTemplate(email.templateUrl, replacementObject, cohortFolder, email.name, true)
-      var htmlBody = convertDocToHtml(emailDocId)
-      DriveApp.getFileById(emailDocId).setTrashed(true)
-
-      // Send email.
-      var message = {
-        to: email.recipient,
-        bcc: EMAIL_BCC,
-        subject: email.subject,
-        htmlBody: htmlBody
-      }
-      // Add attachment if present.
-      if (email.attachmentId) {
-        var attachment = DriveApp.getFileById(email.attachmentId)
-        message.attachments = [attachment]
-      }
-      MailApp.sendEmail(message)
-      console.log("Sent message " + email.subject + " to " + email.recipient)
-      emailCount++
 
     }) // pendingEmails.forEach()
 
     DriveApp.getFileById(template.fileId).setTrashed(true)
-    slackLog("Sent " + emailCount + " emails for " + template.name + " using template at " + template.templateUrl)
+    slackCacheLog("Sent " + emailCount + " emails for " + template.name + " using template at " + template.templateUrl)
+    if (failedEmailCount > 0) {
+      slackCacheLog("Failed to send " + failedEmailCount + " emails for " + template.name + " using template at " + template.templateUrl)
+    }
 
   }) // todaysTemplates.templates.forEach()
-
-  if (todaysTemplates.cohortFinished) endCohort(cohortSettings['Cohort Name']);
 
 } // getEmails()
 
@@ -76,7 +104,14 @@ function convertDocToHtml(documentId) {
             headers     : {"Authorization": "Bearer " + ScriptApp.getOAuthToken()},
             muteHttpExceptions:true,
           };
-  var html = UrlFetchApp.fetch(url,param).getContentText();
+  // Remove style tags from the html, except for borders.  Also remove redirects.
+  var borderCss = '<style>table {border-collapse: collapse;} table, th, td {border: 1px solid black; padding: 5px;} </style>';
+  var html = UrlFetchApp.fetch(url,param).getContentText()
+    .replace(/<style[\s\S]*?<\/style>/ig, borderCss)
+    .replace(
+      /https:\/\/www\.google\.com\/url\?q=(.*?)&.*?\"/g, 
+      function(match, captureGroup){return decodeURIComponent(captureGroup) + '"'}
+    );
   return html;
 }
 
@@ -84,11 +119,12 @@ function convertDocToHtml(documentId) {
  * Find out which emails need to be sent today.
  * @return {object[]} [{name:, templateUrl:, recipient:, subject:, templateValues:}]
  */
-function getTodaysEmailTemplates(cohortSettings) {
-  var today = new Date()
+function getTodaysEmailTemplates(cohortSettings, today) {
+  today = today || new Date()
+  console.log("Getting email templates for " + today)
   // If any emails are unsent, we'll update this to false.
   var cohortFinished = true;
-  
+  var builtFacilitatorEmail = false;
   // Get data from email flow sheet
   var ss = SpreadsheetApp.getActive()
   var emailFlowSheet = ss.getSheetByName(EMAIL_FLOW_SHEET_NAME);
@@ -104,82 +140,152 @@ function getTodaysEmailTemplates(cohortSettings) {
     // console.log(row)
     for (var j=0; j<row.length; j++) {
       var property = headers[j]
-      // Find date fields, except 'Survey Due Date' and 'Session or Coaching Call Date', which are not email send dates.
-      if (property != 'Survey Due Date' &&  property != 'Session or Coaching Call Date' && /Date$/i.test(property) && row[j] instanceof Date) {
+      // Find date fields, except 'Survey Due Date' and 'Coaching Call Date', which are not email send dates.
+      // And don't send survey results, these go out on a separate trigger.
+      if (
+        property != 'Survey Due Date' &&  
+        property != 'Coaching Call Date' && 
+        !(/result/i.test(property)) &&
+        /Date$/i.test(property) && 
+        row[j] instanceof Date
+      ) {
         var sendDate = row[j];
         // Sent date is immediately to right of send date.
         var sent = row[j+1]
-        if (!sent) cohortFinished = false;
+        
+        var templateUrl = row[j-1]
+        // Validate the url
+        var isUrl = false
+        try {
+          if (templateUrl) {
+            DocumentApp.openByUrl(templateUrl)
+            isUrl = true
+          }
+        } catch(err) {
+          console.log("Not a valid document url: " + templateUrl)
+        }
+        // Note whether there are still emails unsent.
+        if (!sent && templateUrl && isUrl) cohortFinished = false;
+
         // Since send dates all have times at midnight, and this triggers after midnight, sendDate < today is sufficient to trigger those scheduled for today.
-        if (!sent && sendDate < today) {
+        if (isUrl && !sent && sendDate < today && templateUrl) {
+          console.log('Building template for ' + property + ' with template url ' + templateUrl + ' to be sent ' + sendDate + ' to recipient ' + object.recipient + ' for 360#' + object.number)
           var template =  {
             // 'Send' dates are immediately to the right of template links.
-            templateUrl: row[j-1],
+            templateUrl: templateUrl,
             name: property.split(/date/i)[0].trim(),
             recipientType: row[headers.indexOf('Recipient')],
-            globals: buildGlobals(row[j-1], object),
+            globals: buildGlobals(templateUrl, object),
             participantsUrl: cohortSettings['Participant List'],
             rowsData: object
           }
-
+//          // Results are now sent from a separate trigger
 //          // If it's a 360 result template, we'll need to attach the 360 results. template.attachmentIds will be a map of {participantId: fileId} for the attachments.
 //          if (/result/i.test(template.name)) {
 //            template.attachmentIds = compileSurveyResults(object.surveyLink)
 //          }
-//          console.log('This template to be sent today: ' + template.templateUrl)
-//          templates.push(template)
-//          // Set the 'sent' column timestamp
-//          object[normalizeHeader(headers[j+1])] = today
+
+         console.log('This template to be sent today: ' + JSON.stringify(template))
+         templates.push(template)
+         // Set the 'sent' column timestamp
+         
+         object[normalizeHeader(headers[j+1])] = today
         }
-      } else if (property == 'Session or Coaching Call Date' && row[j] instanceof Date) {
+      } 
+
+      else if (property == 'Coaching Call Date' && row[j] instanceof Date && !builtFacilitatorEmail) {
         // Share a folder of all individual 360's with the facilitator the day before the coaching call
+        // 6.18.20 changed to 2 days before coaching call. Aaron
+        
         var coachingCallDate = row[j]
-        var tomorrow = new Date()
-        tomorrow.setDate(tomorrow.getDate()+1)
-        if (today < coachingCallDate && coachingCallDate < tomorrow) {
-          sendFacilitatorEmail(cohortSettings['Facilitator Email'], cohortSettings['Cohort Folder ID'])
-        }
+        var tomorrow = TODAY_TEST ? new Date(TODAY_TEST) : new Date()
+        tomorrow.setDate(tomorrow.getDate()+1);
+        var theNextDay = TODAY_TEST ? new Date(TODAY_TEST) : new Date()
+        theNextDay.setDate(theNextDay.getDate()+2);
+        if (tomorrow < coachingCallDate && coachingCallDate < theNextDay) {
+          console.log("Time to send 360 results to facilitator.")
+          builtFacilitatorEmail = true;
+          var resultsTemplateUrl = cohortSettings['Facilitator 360 Results Email Template']
+          if (resultsTemplateUrl) {
+            templates.push(buildFacilitatorEmailTemplate(resultsTemplateUrl))
+          }
+        } 
       }
+
     }
   })
   
   if (templates.length > 0)
   setRowsData2(emailFlowSheet, emailFlowObjects)
 
-  templates = templates.concat(getSessionFeedbackTemplates())
+  // Session feedback surveys no longer sent. 6.27.20
+  // templates = templates.concat(getSessionFeedbackTemplates())
+
+  if (cohortFinished) {
+    slackCacheLog("It appears that this cohort is finished, so I will turn off automation.")
+  }
 
   return {'templates': templates, 'cohortFinished': cohortFinished};
 
   // Private functions
   // -----------------
 
-  function getSessionFeedbackTemplates() {
-    var sessionDatesSheet = SpreadsheetApp.getActive().getSheetByName('Session Dates')
-    var sessionDates = getRowsData2(sessionDatesSheet,null,{getMetadata: true})
-    var feedbackTemplates = []
-    sessionDates.forEach(function(session) {
-      if ((session instanceof Date) && session.date < today) {
-        var template =  {
-          // 'Send' dates are immediately to the right of template links.
-          templateUrl: cohortSettings['Session Feedback Email Template'],
-          name: 'Session Feedback',
-          recipientType: 'Feedback',
-          participantsUrl: cohortSettings['Participant List'],
-          rowsData: session
-        }
-        template.rowsData.surveyLink = (session.arrayIndex == sessionDates.length - 1) ? cohortSettings['Final Session Feedback Survey'] : cohortSettings['Session Feedback Survey']
-        session.feedbackSurveySent = today;
-        feedbackTemplates.push(template)
-      } else {
-        cohortFinished = false
-      }
-    })
-    if (feedbackTemplates.length > 0) {
-      setRowsData2(sessionDatesSheet, sessionDates)
-    }
-    return feedbackTemplates
+  
+  /**
+   * Build a template to share a folder of all individual 360's with the facilitator the day before the coaching call
+   */
+  function buildFacilitatorEmailTemplate(templateUrl) {
 
-  } // getTodaysEmailTemplates.getSessionFeedbackTemplates()
+    var template =  {
+      // 'Send' dates are immediately to the right of template links.
+      templateUrl: templateUrl,
+      name: '360 Results for Facilitator',
+      recipientType: 'Facilitator',
+      globals: buildGlobals(templateUrl, {}),
+      participantsUrl: cohortSettings['Participant List'],
+      rowsData: {}
+    }
+    console.log("Built template '360 Results for Facilitator' from template " + templateUrl)
+    return template
+  }
+
+  // No longer used as of 6.27.20.
+  // function getSessionFeedbackTemplates() {
+  //   var sessionDatesSheet = SpreadsheetApp.getActive().getSheetByName('Session Dates')
+  //   var sessionDates = getRowsData2(sessionDatesSheet,null,{getMetadata: true})
+  //   var feedbackTemplates = []
+  //   var templateUrl = cohortSettings['Session Feedback Email Template'];
+  //   // Validate the url
+  //   var isUrl = false;
+  //   try {
+  //     DocumentApp.openByUrl(templateUrl)
+  //     isUrl = true
+  //   } catch(err) {
+  //     console.log("Not a valid document url: " + templateUrl)
+  //   }
+  //   sessionDates.forEach(function(session) {
+  //     if (isUrl && (session.date instanceof Date) && session.date < today) {
+  //       var template =  {
+  //         templateUrl: templateUrl,
+  //         name: 'Session Feedback',
+  //         recipientType: 'Feedback',
+  //         participantsUrl: cohortSettings['Participant List'],
+  //         rowsData: session
+  //       }
+  //       template.formUrl = (session.arrayIndex == sessionDates.length - 1) ? cohortSettings['Final Session Feedback Survey'] : cohortSettings['Session Feedback Survey']
+  //       template.rowsData.surveyLink = template.formUrl
+  //       session.feedbackSurveySent = today;
+  //       feedbackTemplates.push(template)
+  //     } else {
+  //       cohortFinished = false
+  //     }
+  //   })
+  //   if (feedbackTemplates.length > 0) {
+  //     setRowsData2(sessionDatesSheet, sessionDates)
+  //   }
+  //   return feedbackTemplates
+
+  // } // getTodaysEmailTemplates.getSessionFeedbackTemplates()
 
   /**
    * Build an object of global fields for this document
@@ -227,8 +333,8 @@ function getTodaysEmailTemplates(cohortSettings) {
 function buildEmails(template, settings) {
   console.log('Building emails for template ' + template.fileId + ', based on ' + template.templateUrl)
   template.formUrl = template.rowsData.surveyLink
-  var participantSheet = SpreadsheetApp.openByUrl(template.participantsUrl).getSheetByName('Participant List')
-  var participantData = getRowsData2(participantSheet), participantsUpdated = false;
+  var participantSheet = SpreadsheetApp.openByUrl(template.participantsUrl).getSheetByName(PARTICIPANT_SHEET_NAME)
+  var participantData = getRowsData2(participantSheet, null, {headersRowIndex: 3}), participantsUpdated = false;
   var document = DocumentApp.openById(template.fileId)
   var templateFields = getEmptyTemplateObject(document)
   var subject = extractSubject(document)
@@ -260,7 +366,8 @@ function buildEmails(template, settings) {
         'fieldValues': {},
         'subject': subject,
         'templateUrl': templateUrl,
-        'name': template.name
+        'name': template.name,
+        'hyperlinkReplacements': []
       }
 
       // Create object to fill template for this participant.
@@ -273,32 +380,41 @@ function buildEmails(template, settings) {
             'Your email address': participant.email
           }
           prefillFields[settings["Participant Name Field"]] = participant.participantName
-          thisEmail.hyperlinkReplacements = [{
+          thisEmail.hyperlinkReplacements.push({
             'url': getPrefilledFormUrl(template.formUrl, prefillFields),
-            'text': 'Click here',
+            'text': 'CLICK HERE',
             'field': field
-          }]
+          })
         } else if (/^Participant:/i.test(field)) {
           var property = field.match(/^Participant: *(.*)$/i)[1].trim()
           var value = participant[normalizeHeader(property)]
-          if (!value) slackCacheWarn('Template at ' + template.documentUrl + ' contains unrecognized field "' + field + '".');
+          if (!value) slackCacheWarn('Template at ' + template.templateUrl + ' contains unrecognized or empty field "' + field + '".');
+          if (!value && /goal/i.test(property)) value = 'No goal provided.'
           thisEmail.fieldValues[field] = formatIfDate(value)
+        } else if (field == 'Disc Assessment Instructions Link') {
+          thisEmail.hyperlinkReplacements.push({
+            'url': settings['Disc Instructions Link'],
+            'text': 'CLICK HERE',
+            'field': field
+          })
         } else {
           slackCacheWarn('Unrecognized field: ' + field + ' in template at ' + template.templateUrl)
         }
-      }
+      } // for each participant
       emails.push(thisEmail)
     })
+    
   } // if recipientType == participant
 
-  // TODO: If it's a manager email, summarize all participants in one email
-  if (template.recipientType == 'Manager') {
-    var managerEmailObjects = {}
+  // If it's a manager email, summarize all participants in one email
+  if (template.recipientType === 'Manager') {
+    var managerEmailObjects = {};
     participantData.forEach(function(participant){
-      if (!participant.participantId) {
-        participant.participantId = Utilities.getUuid()
-        participantsUpdated = true
-      }
+  
+//      if (!participant.participantId) {
+//        participant.participantId = Utilities.getUuid();
+//        participantsUpdated = true;
+//      }
 
       var thisManager = participant.managerEmail
       if (!managerEmailObjects[thisManager]) {
@@ -315,14 +431,14 @@ function buildEmails(template, settings) {
       // If it's a reminder email, check if the participant sent the form already.
       if (isReminderEmail) {
         if (alreadySubmitted(participant.participantId, thisManager, template.formUrl)) {
-          console.log('No reminder needed. '+ participant.participantName + ' already completed form ' + template.formUrl)
+          console.log('No reminder needed. Manager'+ thisManager + ' already completed form ' + template.formUrl + ' for participant ' + participant.participantName)
           return
         }
       }
 
  
       // Create object to fill template for this participant.
-      var thisParticipant = {}
+      var thisParticipant = {'fieldValues':{}}
       for (var field in templateFields) {
         if (/^360.*Link/i.test(field)) {
           // Get prefilled survey link
@@ -334,13 +450,14 @@ function buildEmails(template, settings) {
           prefillFields[settings["Participant Name Field"]] = participant.participantName
           thisParticipant.hyperlinkReplacements = [{
             'url': getPrefilledFormUrl(template.formUrl, prefillFields),
-            'text': 'Click here',
+            'text': 'CLICK HERE',
             'field': field
           }]
         } else if (/^Participant:/i.test(field)) {
           var property = field.match(/^Participant: *(.*)$/i)[1].trim()
           var value = participant[normalizeHeader(property)]
-          if (!value) slackCacheWarn('Template at ' + template.documentUrl + ' contains unrecognized field "' + field + '".');
+          if (!value) slackCacheWarn('Template at ' + template.templateUrl + ' contains unrecognized or empty field "' + field + '".');
+          if (!value && /goal/i.test(property)) value = 'No goal provided.'
           thisParticipant.fieldValues[field] = formatIfDate(value)
         } else {
           slackCacheWarn('Unrecognized field: ' + field + ' in template at ' + template.templateUrl)
@@ -386,7 +503,7 @@ function buildEmails(template, settings) {
 
         // Otherwise continue
         var thisEmail = {
-          'recipient': participant.email,
+          'recipient': directReportEmail,
           'fieldValues': {},
           'subject': subject,
           'templateUrl': templateUrl,
@@ -404,13 +521,14 @@ function buildEmails(template, settings) {
             prefillFields[settings["Participant Name Field"]] = participant.participantName
             thisEmail.hyperlinkReplacements = [{
               'url': getPrefilledFormUrl(template.formUrl, prefillFields),
-              'text': 'Click here',
+              'text': 'CLICK HERE',
               'field': field
             }]
           } else if (/^Participant:/i.test(field)) {
             var property = field.match(/^Participant: *(.*)$/i)[1].trim()
             var value = participant[normalizeHeader(property)]
-            if (!value) slackCacheWarn('Template at ' + template.templateUrl + ' contains unrecognized field "' + field + '".');
+            if (!value) slackCacheWarn('Template at ' + template.templateUrl + ' contains unrecognized or empty field "' + field + '".');
+            if (!value && /goal/i.test(property)) value = 'No goal provided.'
             thisEmail.fieldValues[field] = formatIfDate(value)
           } else {
             slackCacheWarn('Unrecognized field: ' + field + ' in template at ' + template.templateUrl)
@@ -422,45 +540,117 @@ function buildEmails(template, settings) {
   } // if recipient == direct report
 
   // Feedback surveys are a little different.
-  if (template.recipientType == 'Feedback') {
-    participantData.forEach(function(participant){
-      if (!participant.participantId) {
-        participant.participantId = Utilities.getUuid()
-        participantsUpdated = true
-      }
+  // Removed 6.27.20 per client request
+  // if (template.recipientType == 'Feedback') {
+  //   participantData.forEach(function(participant){
+  //     if (!participant.participantId) {
+  //       participant.participantId = Utilities.getUuid()
+  //       participantsUpdated = true
+  //     }
 
+  //     var thisEmail = {
+  //       'recipient': participant.email,
+  //       'fieldValues': {},
+  //       'subject': subject,
+  //       'templateUrl': templateUrl,
+  //       'name': template.name
+  //     }
+
+  //     // Create object to fill template for this participant.
+  //     for (var field in templateFields) {
+  //       if (/Session Feedback Survey/i.test(field)) {
+
+  //         thisEmail.hyperlinkReplacements = [{
+  //           'url': template.formUrl,
+  //           'text': 'CLICK HERE',
+  //           'field': field
+  //         }]
+  //       } else if (/^Participant:/i.test(field)) {
+  //         var property = field.match(/^Participant: *(.*)$/i)[1].trim()
+  //         var value = participant[normalizeHeader(property)]
+  //         if (!value) slackCacheWarn('Template at ' + template.templateUrl + ' contains unrecognized field "' + field + '".');
+  //         thisEmail.fieldValues[field] = formatIfDate(value)
+  //       } else {
+  //         slackCacheWarn('Template at ' + template.templateUrl + ' contains unrecognized field "' + field + '".')
+  //       }
+  //     }
+  //     emails.push(thisEmail)
+  //   })
+    // Removed 6.27.20 per client request. Aaron
+    // Add facilitator 1 email
+    // var facilitatorEmail = {
+    //   'recipient': settings["Facilitator 1 Email (Lead)"],
+    //   'fieldValues': {},
+    //   'subject': subject,
+    //   'templateUrl': templateUrl,
+    //   'name': template.name,
+    //   'hyperlinkReplacements': [{
+    //     'url': template.formUrl,
+    //     'text': 'CLICK HERE',
+    //     'field': 'Session Feedback Survey'
+    //   }]
+    // }
+    // emails.push(facilitatorEmail)
+
+    // // Add facilitator 2 email
+    // var facilitator2Email = {
+    //   'recipient': settings["Facilitator 2 Email"],
+    //   'fieldValues': {},
+    //   'subject': subject,
+    //   'templateUrl': templateUrl,
+    //   'name': template.name,
+    //   'hyperlinkReplacements': [{
+    //     'url': template.formUrl, 
+    //     'text': 'CLICK HERE',
+    //     'field': 'Session Feedback Survey'
+    //   }]
+    // }
+    // emails.push(facilitator2Email)
+
+  // } // if recipientType == feedback
+
+  
+  // If it's the facilitator email, create one email
+  if (template.recipientType == 'Facilitator') {
+    
+      // Otherwise continue
       var thisEmail = {
-        'recipient': participant.email,
+        'recipient': settings['Facilitator 1 Email (Lead)'],
         'fieldValues': {},
         'subject': subject,
         'templateUrl': templateUrl,
         'name': template.name
       }
 
-      // Create object to fill template for this participant.
+      // Create object to fill template.
       for (var field in templateFields) {
-        if (/Session Feedback Survey/i.test(field)) {
-          // Get prefilled survey link
-          var prefillFields = {
-           // 'Email address': participant.email // Emails are collected automatically on this form.
-          }
+        if (field === '360 Results Folder' && settings['Survey Results Folder ID']) {
+          // Get link to results folder
+          var resultsUrl = DriveApp.getFolderById(settings['Survey Results Folder ID']).getUrl()
           thisEmail.hyperlinkReplacements = [{
-            'url': getPrefilledFormUrl(template.formUrl, prefillFields),
-            'text': 'Click here',
+            'url': resultsUrl,
+            'text': 'CLICK HERE',
             'field': field
           }]
-        } else if (/^Participant:/i.test(field)) {
-          var property = field.match(/^Participant: *(.*)$/i)[1].trim()
-          var value = participant[normalizeHeader(property)]
-          if (!value) slackCacheWarn('Template at ' + template.documentUrl + ' contains unrecognized field "' + field + '".');
-          thisEmail.fieldValues[field] = formatIfDate(value)
         } else {
-          slackCacheWarn('Template at ' + template.documentUrl + ' contains unrecognized field "' + field + '".')
+          slackCacheWarn('Unrecognized field: ' + field + ' in template at ' + template.templateUrl)
         }
-      }
-      emails.push(thisEmail)
-    })
-  } // if recipientType == feedback
+      } // for each participant
+      emails.push(thisEmail)  
+  } // if recipientType = 'Facilitator'
+
+  // If it's the HR report email, create one email
+  if (/^HR/.test(template.recipientType || '')) {
+  
+    var thisEmail = {
+      'recipient': settings['Client HR Contact'],
+      'fieldValues': {},
+      'subject': subject,
+      'templateUrl': templateUrl,
+      'name': template.name
+    }
+    emails.push(thisEmail)  
+  } // if recipientType = 'HR'
 
   // If it's a results template, add the attachment file id
   if (/result/i.test(template.name) && template.attachmentIds) {
@@ -468,7 +658,7 @@ function buildEmails(template, settings) {
   }
 
   // If needed, write to sheet with updated participant data (uuid, for example)
-  if (participantsUpdated) setRowsData2(participantSheet, participantData)
+  if (participantsUpdated) setRowsData2(participantSheet, participantData, {preserveArrayFormulas: true, headersRowIndex: 3})
   
   console.log("Built " + emails.length + " emails for this template.")
   
@@ -498,17 +688,3 @@ function buildEmails(template, settings) {
   } // buildEmails.alreadySubmitted()
 
 } // buildEmails()
-
-/**
- * Share a folder of all individual 360's with the facilitator the day before the coaching call
- */
-function sendFacilitatorEmail(emailAddress, cohortFolderId) {
-  var htmlMessage = "<p>Facilitator,</p>"
-  htmlMessage += '<p><a href="' + DriveApp.getFolderById(cohortFolderId).getUrl() +'"> Click here </a>'
-  htmlMessage += " to view the results summaries for tomorrow's coaching call.</p>"
-  MailApp.sendEmail({
-    to: emailAddress,
-    subject: 'Response summaries for tomorrow\'s coaching call',
-    htmlBody: htmlMessage
-  })
-}

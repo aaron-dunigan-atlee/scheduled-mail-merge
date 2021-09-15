@@ -6,10 +6,16 @@ function include(filename){
 
 function getAccessToken() {
   var token = ScriptApp.getOAuthToken();
-  Logger.log(token)
+  
   return token // DriveApp.getFiles()
 }
 
+function test_businessDays() {
+  var date = new Date('07/29/2020')
+  console.log(date)
+  console.log(addBusinessDays(date, -1))
+}
+              
 
 /**
  * Calculate number of business days (may be negative for days before) from a date, 
@@ -19,6 +25,10 @@ function getAccessToken() {
  * @param {number} businessDays 
  */
 function addBusinessDays(date, businessDays) {
+  if (!date || !(date instanceof Date)) {
+    console.log("Can't add business days to " + date + " because it's not a date.")
+    return date;
+  }
   console.log("Adding " + businessDays + ' business days to ' + date)
   var tmp = new Date(date);
 
@@ -35,7 +45,7 @@ function addBusinessDays(date, businessDays) {
   var direction = businessDays > 0 ? 1 : -1;
   businessDays = Math.abs(businessDays)
 
-  while( businessDays>=0 ) {
+  while (businessDays > 0) {
     tmp.setDate( tmp.getDate() + direction );
     if(isBusinessDay (tmp)) {
       console.log(tmp + ' is a business day')
@@ -122,7 +132,42 @@ function addBusinessDays(date, businessDays) {
  * @param {string} dateString A valid date string, expressed in the local timezone 
  */
 function stringToLocalDate(dateString) {
-  var date = new Date(dateString)
-  date.setMinutes(date.getMinutes() + date.getTimezoneOffset())
-  return date
+  if (!dateString) return null;
+  try {
+    var date = new Date(dateString)
+    date.setMinutes(date.getMinutes() + date.getTimezoneOffset())
+    return date
+  } catch(err) {
+    return null;
+  }
+}
+
+/**
+ * @returns {Object} Keys are column A (NOT normalized); values are Column B
+ */
+function getSettings() {
+  // Get the data we'll need to fill the global values in the templates.
+  var ss = SpreadsheetApp.getActive()
+  var settingsArray = ss.getSheetByName('⚙ Settings').getDataRange().getValues()
+  var cohortSettings = {}
+  settingsArray.forEach(function(row){if (row[0]) cohortSettings[row[0]] = row[1]})
+  return cohortSettings
+}
+
+function shareSilentyFailSilently(fileId,userEmail, role){
+  role = role || 'reader'
+  try {
+    Drive.Permissions.insert(
+    {
+      'role': role,
+      'type': 'user',
+      'value': userEmail
+    },
+    fileId,
+    {
+      'sendNotificationEmails': 'false'
+    });  
+  } catch(err) {
+    slackCacheWarn("Couldn't share file " + fileId + " with " + userEmail + ": " + err.message)
+  }
 }

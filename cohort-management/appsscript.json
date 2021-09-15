@@ -5,8 +5,12 @@
       "userSymbol": "Docs",
       "serviceId": "docs",
       "version": "v1"
+    }, {
+      "userSymbol": "Drive",
+      "serviceId": "drive",
+      "version": "v2"
     }]
   },
   "exceptionLogging": "STACKDRIVER",
-  "runtimeVersion": "V8"
+  "runtimeVersion": "DEPRECATED_ES5"
 }
