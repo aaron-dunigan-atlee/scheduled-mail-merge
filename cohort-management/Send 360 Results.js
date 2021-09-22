@@ -24,7 +24,7 @@ function send360Results(e)
   var participantSpreadsheet = SpreadsheetApp.openByUrl(settings["Participant List"]);
   var participantListFileId = participantSpreadsheet.getId();
   var participantSheet = participantSpreadsheet.getSheetByName(PARTICIPANT_SHEET_NAME)
-  var participantData = getRowsData2(participantSheet, null, { headersRowIndex: 3, getMetadata: true });
+  var participantData = getParticipantsData(settings)
   var colIndex = participantSheet.getRange('3:3').getValues().shift().indexOf('Timestamps') + 1
 
   if (colIndex)
