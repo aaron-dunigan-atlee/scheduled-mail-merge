@@ -55,7 +55,7 @@ function startCohort()
     {
       try
       {
-        shareSilentyFailSilently(settings['Survey Results Folder ID'], settings['Facilitator 1 Email (Lead)'], 'writer')
+        shareSilentlyFailSilently(settings['Survey Results Folder ID'], settings['Facilitator 1 Email (Lead)'], 'writer')
 
       } catch (err)
       {
@@ -453,7 +453,7 @@ function setupCohortForms(participantData, settings)
   }
 
   // Share the feedback survey results with the facilitator
-  shareSilentyFailSilently(feedbackSsId, settings["Facilitator 1 Email (Lead)"])
+  shareSilentlyFailSilently(feedbackSsId, settings["Facilitator 1 Email (Lead)"])
 
   // Not sure if this is necessary, but want to make sure the form destinations get set before assigning conditional formatting to them.
   SpreadsheetApp.flush()

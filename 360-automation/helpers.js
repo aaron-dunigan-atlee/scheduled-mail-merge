@@ -1,21 +1,24 @@
-function include(filename){
+function include(filename)
+{
   return HtmlService.createHtmlOutputFromFile(filename)
     .getContent();
 };
 
 
-function getAccessToken() {
+function getAccessToken()
+{
   var token = ScriptApp.getOAuthToken();
-  
+
   return token // DriveApp.getFiles()
 }
 
-function test_businessDays() {
+function test_businessDays()
+{
   var date = new Date('07/29/2020')
   console.log(date)
   console.log(addBusinessDays(date, -1))
 }
-              
+
 
 /**
  * Calculate number of business days (may be negative for days before) from a date, 
@@ -24,8 +27,10 @@ function test_businessDays() {
  * @param {Date} date 
  * @param {number} businessDays 
  */
-function addBusinessDays(date, businessDays) {
-  if (!date || !(date instanceof Date)) {
+function addBusinessDays(date, businessDays)
+{
+  if (!date || !(date instanceof Date))
+  {
     console.log("Can't add business days to " + date + " because it's not a date.")
     return date;
   }
@@ -33,24 +38,29 @@ function addBusinessDays(date, businessDays) {
   var tmp = new Date(date);
 
   // Timezones are scary, let's work with whole-days only
-  if (businessDays !== parseInt(businessDays, 10)) {
+  if (businessDays !== parseInt(businessDays, 10))
+  {
     throw new TypeError('businessDaysFromDate can only adjust by whole days');
   }
 
   // short-circuit no work; make direction assignment simpler
-  if (businessDays === 0) {
-      return date;
+  if (businessDays === 0)
+  {
+    return date;
   }
 
   var direction = businessDays > 0 ? 1 : -1;
   businessDays = Math.abs(businessDays)
 
-  while (businessDays > 0) {
-    tmp.setDate( tmp.getDate() + direction );
-    if(isBusinessDay (tmp)) {
+  while (businessDays > 0)
+  {
+    tmp.setDate(tmp.getDate() + direction);
+    if (isBusinessDay(tmp))
+    {
       console.log(tmp + ' is a business day')
       --businessDays;
-    } else {
+    } else
+    {
       console.log(tmp + ' is not a business day')
     }
   }
@@ -65,9 +75,11 @@ function addBusinessDays(date, businessDays) {
    * As noted in the comments there, it may not work perfectly.
    * @param {Date} date 
    */
-  function isBusinessDay (date) {
+  function isBusinessDay(date)
+  {
     var dayOfWeek = date.getDay();
-    if(dayOfWeek === 0 || dayOfWeek === 6) {
+    if (dayOfWeek === 0 || dayOfWeek === 6)
+    {
       // Weekend
       return false;
     }
@@ -94,21 +106,24 @@ function addBusinessDays(date, businessDays) {
     ];
 
     var dayOfMonth = date.getDate(),
-    month = date.getMonth() + 1,
-    monthDay = month + '/' + dayOfMonth;
+      month = date.getMonth() + 1,
+      monthDay = month + '/' + dayOfMonth;
 
-    if(holidays.indexOf(monthDay)>-1){
+    if (holidays.indexOf(monthDay) > -1)
+    {
       return false;
     }
 
     var monthDayDay = monthDay + '+' + dayOfWeek;
-    if(holidays.indexOf(monthDayDay)>-1){
+    if (holidays.indexOf(monthDayDay) > -1)
+    {
       return false;
     }
 
     var weekOfMonth = Math.floor((dayOfMonth - 1) / 7) + 1,
-        monthWeekDay = month + '-' + weekOfMonth + '/' + dayOfWeek;
-    if(holidays.indexOf(monthWeekDay)>-1){
+      monthWeekDay = month + '-' + weekOfMonth + '/' + dayOfWeek;
+    if (holidays.indexOf(monthWeekDay) > -1)
+    {
       return false;
     }
 
@@ -116,8 +131,9 @@ function addBusinessDays(date, businessDays) {
     lastDayOfMonth.setMonth(lastDayOfMonth.getMonth() + 1);
     lastDayOfMonth.setDate(0);
     var negWeekOfMonth = Math.floor((lastDayOfMonth.getDate() - dayOfMonth - 1) / 7) + 1,
-        monthNegWeekDay = month + '~' + negWeekOfMonth + '/' + dayOfWeek;
-    if(holidays.indexOf(monthNegWeekDay)>-1){
+      monthNegWeekDay = month + '~' + negWeekOfMonth + '/' + dayOfWeek;
+    if (holidays.indexOf(monthNegWeekDay) > -1)
+    {
       return false;
     }
 
@@ -126,18 +142,58 @@ function addBusinessDays(date, businessDays) {
 
 } // addBusinessDays()
 
+/**
+ * Calculate number business days (may be negative for days before) from a date, 
+ * @param {Date} date 
+ * @param {number} daysDiff 
+ */
+function addDays(date, daysDiff)
+{
+  if (!date || !(date instanceof Date))
+  {
+    console.log("Can't add days to " + date + " because it's not a date.")
+    return date;
+  }
+  console.log("Adding " + daysDiff + ' business days to ' + date)
+  var tmp = new Date(date);
 
+  // Timezones are scary, let's work with whole-days only
+  if (daysDiff !== parseInt(daysDiff, 10))
+  {
+    throw new TypeError('addDays can only adjust by whole days');
+  }
+
+  // short-circuit no work; make direction assignment simpler
+  if (daysDiff === 0)
+  {
+    return date;
+  }
+
+  var direction = daysDiff > 0 ? 1 : -1;
+  daysDiff = Math.abs(daysDiff)
+
+  while (daysDiff > 0)
+  {
+    tmp.setDate(tmp.getDate() + direction);
+    --daysDiff;
+  }
+  console.log('Final date: ' + tmp)
+  return tmp;
+}
 /**
  * Convert a date string to a Date object with correct conversion to local timezone 
  * @param {string} dateString A valid date string, expressed in the local timezone 
  */
-function stringToLocalDate(dateString) {
+function stringToLocalDate(dateString)
+{
   if (!dateString) return null;
-  try {
+  try
+  {
     var date = new Date(dateString)
     date.setMinutes(date.getMinutes() + date.getTimezoneOffset())
     return date
-  } catch(err) {
+  } catch (err)
+  {
     return null;
   }
 }
@@ -145,29 +201,33 @@ function stringToLocalDate(dateString) {
 /**
  * @returns {Object} Keys are column A (NOT normalized); values are Column B
  */
-function getSettings() {
+function getSettings()
+{
   // Get the data we'll need to fill the global values in the templates.
   var ss = SpreadsheetApp.getActive()
   var settingsArray = ss.getSheetByName('⚙ Settings').getDataRange().getValues()
   var cohortSettings = {}
-  settingsArray.forEach(function(row){if (row[0]) cohortSettings[row[0]] = row[1]})
+  settingsArray.forEach(function (row) { if (row[0]) cohortSettings[row[0]] = row[1] })
   return cohortSettings
 }
 
-function shareSilentyFailSilently(fileId,userEmail, role){
+function shareSilentyFailSilently(fileId, userEmail, role)
+{
   role = role || 'reader'
-  try {
+  try
+  {
     Drive.Permissions.insert(
-    {
-      'role': role,
-      'type': 'user',
-      'value': userEmail
-    },
-    fileId,
-    {
-      'sendNotificationEmails': 'false'
-    });  
-  } catch(err) {
+      {
+        'role': role,
+        'type': 'user',
+        'value': userEmail
+      },
+      fileId,
+      {
+        'sendNotificationEmails': 'false'
+      });
+  } catch (err)
+  {
     slackCacheWarn("Couldn't share file " + fileId + " with " + userEmail + ": " + err.message)
   }
 }

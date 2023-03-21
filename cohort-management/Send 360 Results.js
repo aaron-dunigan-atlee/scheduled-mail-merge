@@ -266,7 +266,7 @@ function sendResultsEmail(emailAddress, emailData, e)
     resultsFileUrl = DriveApp.getFileById(emailData.resultsFileId).getUrl()
     htmlBody += '<br><br><a href ="' + resultsFileUrl + '">Attachment: 360 results</a>'
     // Attempt to share the file with the participant.  Participants may not have gmail addresses, which will throw an error--log it to slack and move on.
-    shareSilentyFailSilently(emailData.resultsFileId, emailAddress)
+    shareSilentlyFailSilently(emailData.resultsFileId, emailAddress)
   }
 
   // Add footer with debug info

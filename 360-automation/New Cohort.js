@@ -1,4 +1,5 @@
-function createCohortSlack(config) {
+function createCohortSlack(config)
+{
   return runWithSlackReporting('createCohort', [config])
 }
 
@@ -14,7 +15,8 @@ function createCohortSlack(config) {
  */
 
 
-function createCohortManualTest(){
+function createCohortManualTest()
+{
   var config = {
     "client": "Automation Test",
     "flowSheetName": "Flow Leader Lab",
@@ -31,17 +33,18 @@ function createCohortManualTest(){
   createCohort(config)
 }
 
-function createCohort(config) {
+function createCohort(config)
+{
   var client = config.client
-  var cohortName =  config.cohortName
+  var cohortName = config.cohortName
   console.log("Creating cohort '" + cohortName + "' with this configuration:\n" + JSON.stringify(config, null, 2))
-  var coachingCallDates = config.coachingCallDates.map(stringToLocalDate) 
+  var coachingCallDates = config.coachingCallDates.map(stringToLocalDate)
   var session1Date = stringToLocalDate(config.session1Date)
   // var sessionDates = JSON.parse(config.sessionDates || '[]')
   var cohortSuffix = ' - ' + client + ' - ' + cohortName
-  
+
   // Row object to be written to the Cohorts sheet
-  var cohortData = {'clientName': client, 'cohortName': cohortName}
+  var cohortData = { 'clientName': client, 'cohortName': cohortName }
 
   // If non-existent, create client folder.  Create cohort subfolder.
   var rootClientsFolder = DriveApp.getFolderById(CLIENTS_FOLDER_ID);
@@ -49,9 +52,11 @@ function createCohort(config) {
   var cohortFolder = getOrCreateFolderByName(clientFolder, cohortName);
   cohortData.cohortFolder = cohortFolder.getUrl();
   console.log("Cohort folder created: " + cohortData.cohortFolder)
-  try{
+  try
+  {
     shareSilentyFailSilently(cohortFolder.getId(), CALENDAR_ACCOUNT, 'writer')
-  } catch(err){
+  } catch (err)
+  {
     console.error(err)
   }
 
@@ -61,26 +66,32 @@ function createCohort(config) {
 
   // Set up Participant List
   var participantsListFile
-  if (config.participantList) {
-    try {
+  if (config.participantList)
+  {
+    try
+    {
       var participantListSpreadsheet = SpreadsheetApp.openByUrl(config.participantList)
       participantsListFile = DriveApp.getFileById(participantListSpreadsheet.getId())
       console.log("Found participants list at " + config.participantList)
       cohortFolder.addFile(participantsListFile)
-    } catch(err) {
+    } catch (err)
+    {
       slackCacheWarn("Couldn't open the specified participant list: " + config.participantList + '\n' + err.message)
     }
   }
-  if (!participantsListFile) {
+  if (!participantsListFile)
+  {
     // Create copy of Participant list, rename, and add link to master sheet
     participantsListFile = DriveApp.getFileById(MASTER_PARTICIPANTS_LIST_ID).makeCopy(cohortFolder);
     console.log("Participant List created: " + participantsListFile.getUrl())
   }
   participantsListFile.setName('Participant List' + cohortSuffix)
   cohortData.participantList = participantsListFile.getUrl();
-  try{
-    shareSilentyFailSilently(participantsListFile.getId(), CALENDAR_ACCOUNT,'writer')
-  } catch(err){
+  try
+  {
+    shareSilentyFailSilently(participantsListFile.getId(), CALENDAR_ACCOUNT, 'writer')
+  } catch (err)
+  {
     console.error(err)
   }
 
@@ -92,7 +103,8 @@ function createCohort(config) {
 
   // Transfer the email flow, session dates, and settings to Cohort Management
   // First, set the Disc Assessment due date to 1 week before the Session 1 Date
-  if (session1Date) {
+  if (session1Date)
+  {
     var discDueDate = session1Date;
     discDueDate.setDate(discDueDate.getDate() - 7)
     config.discAssessmentDueDate = discDueDate
@@ -112,8 +124,8 @@ function createCohort(config) {
   cohortData.emailFlow = config.flowSheetName
 
   // Write cohort summary back to Cohorts sheet.
-  setRowsData(SpreadsheetApp.getActive().getSheetByName('Cohorts'), [cohortData], {writeMethod: 'append'})
-  
+  setRowsData(SpreadsheetApp.getActive().getSheetByName('Cohorts'), [cohortData], { writeMethod: 'append' })
+
   // Log results
   console.log('Created new cohort ' + cohortName + '\nCohort folder at ' + cohortData.cohortFolder)
 
@@ -128,38 +140,50 @@ function createCohort(config) {
    * @param {string} flowSheetName 
    * @param {Date[]} coachingCallDates  Dates of coaching calls, in order.
    */
-  function setEmailFlow(flowSheetName, coachingCallDates, session1Date) {
+  function setEmailFlow(flowSheetName, coachingCallDates, session1Date)
+  {
     var flowSheet = SpreadsheetApp.getActive().getSheetByName(flowSheetName).copyTo(cohortManagementSS).setName('Email Flow');
     var flowData = getRowsData(flowSheet)
     //   .filter(function(x){
     //     // In case there are more 360's in the template than in the current setup, just remove the additional ones
     //     return (typeof x.number === 'number' && x.number <= coachingCallDates.length)
     //   })
-    
-    flowData.forEach(function(row){
+
+    flowData.forEach(function (row)
+    {
       // Set 'anchor date' (coaching call or session date) for this 360, from which all due dates are measured.
       var threeSixtyNumber = row.number - 1 // -1 for 0-based array indexing
       if (!coachingCallDates[threeSixtyNumber]) return;
       row.coachingCallDate = coachingCallDates[threeSixtyNumber]
 
       // Change days +/- to dates
-      var dueDateFields = ['surveyDueDate','emailStartDate','emailReminder1Date','emailReminder2Date','emailReminder3Date','resultDate']
-      dueDateFields.forEach(function(dueDateField){
-        if (typeof row[dueDateField] === 'number' && row.coachingCallDate) {
+      var dueDateFields = ['surveyDueDate', 'emailStartDate', 'emailReminder1Date', 'emailReminder2Date', 'emailReminder3Date', 'resultDate']
+      dueDateFields.forEach(function (dueDateField)
+      {
+        if (typeof row[dueDateField] === 'number' && row.coachingCallDate)
+        {
           // Special exception: two dates are set from the Session 1 Date instead of the coaching call date            
-          if (dueDateField == 'emailStartDate' && row.number == 1 && (row.recipient == 'Participant' || row.recipient == 'HR (Participant)')) {
+          if (dueDateField == 'emailStartDate' && row.number == 1 && (row.recipient == 'Participant' || row.recipient == 'HR (Participant)'))
+          {
             row[dueDateField] = addBusinessDays(session1Date, row[dueDateField])
-          } else {
+            // Update 11.4.21: Result date is +/- actual days, not business days.
+          } else if (dueDateField === 'resultDate')
+          {
+            row[dueDateField] = addDays(row.coachingCallDate, row[dueDateField])
+          } else
+          {
             row[dueDateField] = addBusinessDays(row.coachingCallDate, row[dueDateField])
           }
 
         }
       })
 
+
+
     }) // flowData.forEach
 
     // Write it all back to the sheet.
-    setRowsData(flowSheet, flowData, {writeMethod: 'clear'})
+    setRowsData(flowSheet, flowData, { writeMethod: 'clear' })
     console.log("Assigned email flow '" + flowSheetName + "' with coaching call dates " + coachingCallDates)
 
   } // createCohort.setEmailFlow()
@@ -184,7 +208,7 @@ function createCohort(config) {
   //     sessionDatesData.push(sessionDates[i])
   //     expectedSessionNumber++
   //   }
-    
+
   //   // Write it all back to the sheet.
   //   setRowsData(sessionSheet, sessionDatesData, {writeMethod: 'clear'})
   //   console.log("Set session dates " + JSON.stringify(sessionDates))
@@ -194,27 +218,31 @@ function createCohort(config) {
    * Write the settings to the cohort settings sheet
    * @param {Object} config 
    */
-  function setCohortSettings(config) {
+  function setCohortSettings(config)
+  {
     console.log("Assigning Cohort Settings")
     var settingsSheet = cohortManagementSS.getSheetByName('Cohort Settings');
     var range = settingsSheet.getDataRange()
     var settingsArray = range.getValues()
-    settingsArray.forEach(function(row){
+    settingsArray.forEach(function (row)
+    {
       var value = config[normalizeHeader(row[0])]
-      if (value) {
+      if (value)
+      {
         row[1] = value;
         console.log(row[0] + ' = ' + value)
       }
     })
-    
+
     // Write it all back to the sheet.
     range.setValues(settingsArray)
-    
+
   } // createCohort.setCohortSettings()
 
 } // createCohort()
 
-function showCohortConfirmation(cohortName, folderUrl){
+function showCohortConfirmation(cohortName, folderUrl)
+{
   var template = HtmlService.createTemplateFromFile('dialog-confirm-cohort');
   template.cohortName = cohortName;
   template.cohortFolderUrl = folderUrl;

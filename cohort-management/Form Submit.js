@@ -26,7 +26,7 @@ function onFormSubmit(e)
   console.log("Participant: " + JSON.stringify(participant))
   if (!participant)
   {
-    slackError('Survey ID ' + participantId + 'on form submission does not match any Participant ID')
+    slackError('Survey ID ' + participantId + ' on form submission does not match any Participant ID')
   }
 
   var participantUpdated = false;

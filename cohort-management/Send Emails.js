@@ -12,7 +12,7 @@ function sendEmails(e, today)
   if ((todaysTemplates.templates.length) == 0)
   {
     slackLog('No emails to send today')
-    if (todaysTemplates.cohortFinished) endCohort(cohortSettings['Cohort Name']);
+    // if (todaysTemplates.cohortFinished) endCohort(cohortSettings['Cohort Name']);
     return
   }
   console.log("Found " + todaysTemplates.templates.length + " email templates to send today.")
